@@ -36,12 +36,11 @@ export async function syncReports() {
     const settings = Object.fromEntries((await readRows("Tracker Settings")).slice(1));
     const startedAt = Number(settings.contest_tracking_started_at);
     if (!Number.isSafeInteger(startedAt) || startedAt <= 0) throw new Error("Contest tracking baseline is missing; refusing historical import");
-    const friends = [...new Set((await readRows("Friends")).slice(1).map(row => String(row[0] ?? "").trim()).filter(Boolean))];
     const submissions = await refreshPending((await readRows("Submissions")).slice(1));
     await replaceRows("Submissions", [SUBMISSION_HEADERS, ...submissions]);
-    const contests = await collectContests(submissions, (await readRows("Contests")).slice(1), startedAt, friends);
+    const contests = await collectContests(submissions, (await readRows("Contests")).slice(1), startedAt);
     await replaceRows("Contests", [CONTEST_HEADERS, ...contests.rows]);
     await replaceRows("Monthly Reports", [REPORT_HEADERS, ...monthlyReports(submissions, contests.rows, startedAt)]);
     if (contests.errors.length) throw new Error(contests.errors.join("; "));
-    return { contests: contests.rows.length, monthlyReports: true, configuredFriends: friends.length };
+    return { contests: contests.rows.length, monthlyReports: true };
 }

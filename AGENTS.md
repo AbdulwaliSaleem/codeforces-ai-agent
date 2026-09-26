@@ -19,13 +19,18 @@ The project is already deployed and working.
 
 ## Current Release — 26 September 2026
 
-Commit `7ff7e33` is deployed on production `main` and is present in the local project.
-The spreadsheet now has `Submissions`, `Contests`, `Monthly Reports`, `Friends`,
-and `Tracker Settings` tabs. `Sheet1` is retained as the original data copy.
+The spreadsheet improvements were initially deployed in commit `7ff7e33`.
+The current code removes friend tracking at the user's request. Its active tabs
+are `Submissions`, `Contests`, `Monthly Reports`, and `Tracker Settings`.
+`Sheet1` remains the original data copy. The user selected monthly reports only.
 
-The user selected monthly reports only. The Friends tab contains 68 verified
-Codeforces handles; `Sahil Sarfraz` was normalized to `SahilSarfraz` using the API.
-The live Friends tab is the source for future comparison changes.
+After deploying this version, workbook setup atomically removes the retired
+Friends tab and the two comparison columns from Contests. It validates the old
+headers first, preserves all other fields and baselines, and is safe to rerun.
+The handle configuration file and friend API lookups have been removed. Do not
+reintroduce friend comparisons or a personal handle list without a new request.
+Historical Git commits and spreadsheet versions may still contain the old list;
+this change does not rewrite history or make the repository public.
 
 The deployed feature changes were pushed directly to main with user approval.
 A retrospective draft PR compares them against the pre-release commit for review;
@@ -57,7 +62,7 @@ Detailed flow:
 8. Only after the spreadsheet write succeeds, it updates `last_submission_id` in Supabase.
 9. The newest successfully written submission ID becomes the new cursor.
 10. The agent then refreshes pending verdicts, missing tags, completed contest
-    results, friend ranks, and monthly reports, even on days without new submissions.
+    results and monthly reports, even on days without new submissions.
 
 Submission objects are kept in per-run tool state, not reconstructed from model
 arguments. Tools enforce fetch → successful sheet write → cursor update. The agent
@@ -279,23 +284,25 @@ Keeps per-run submission data and enforces write-before-cursor ordering.
 
 ### `tools/contests.mjs` and `tools/reports.mjs`
 
-Collect completed official contest results and friend ranks, refresh pending
+Collect completed official contest results, refresh pending
 verdicts and missing tags, and update monthly reports. Contest tracking uses the
 start timestamp stored in Tracker Settings and does not import older contests.
 
-### `tracker-config.mjs`
+### `tools/workbook-migration.mjs`
 
-Seeds the user-supplied friend handles when the Friends tab is first created.
-After creation, the live Friends tab controls comparisons.
+Validates the retired spreadsheet layout and builds the atomic requests that
+remove the old comparison columns and Friends tab. It contains no handle list.
 
 ### `scripts/` and `tests/`
 
 - `npm test`: isolated fixture tests; no production writes or network calls.
 - `npm run sheet:inspect`: read-only sheet and cursor inspection.
-- `npm run sheet:setup`: creates/formats tabs, validates friends, refreshes reports;
+- `npm run sheet:setup`: migrates/creates/formats tabs and refreshes reports;
   does not advance the submission cursor.
 - `node scripts/verify-sheet.mjs`: read-only checks of migration, unique IDs,
-  dates, tags, conditional formatting, friends, monthly report, and cursor.
+  dates, tags, conditional formatting, contest schema, monthly report, and cursor.
+- `node scripts/remove-friends.mjs`: previews the removal migration. Add `--apply`
+  after deployment to apply it and verify other sheet contents and the cursor are unchanged.
 - `node run-local.mjs`: a real agent run that can write submissions and state.
 
 ### `tools/state.mjs`
@@ -361,8 +368,7 @@ possible. If no tags are published, use `Not published by Codeforces` and retry
 later. Problem 1578C had no topic tags in either the API or official problem page
 when checked; never invent tags to fill the cell.
 
-Contests records solved problems, official rank, old/new rating, rating change,
-and rank among configured friends who participated. Ties share a friend rank.
+Contests records solved problems, official rank, old/new rating, and rating change.
 Only completed official public contests starting after the persisted contest
 baseline are included. Results update daily, and delayed rating changes are
 rechecked. Practice/virtual entries and private/gym standings requiring API
@@ -384,7 +390,7 @@ because Google Sheets has no transactional unique-ID constraint.
 
 ## Follow-up Work
 
-The requested sheet layout, contest tracking, friend comparisons, and monthly
+The requested sheet layout, contest tracking, and monthly
 reports have been implemented. Future work should follow new user requests.
 If verifying the complete agent again, first account for the Gemini quota
 limitation. Do not change the model/provider or billing configuration without

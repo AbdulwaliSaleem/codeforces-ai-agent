@@ -1,5 +1,5 @@
 export const SUBMISSION_HEADERS = ["Submission ID", "Date (PKT)", "Time (PKT)", "Contest ID", "Problem ID", "Problem name", "Rating", "Tags", "Language", "Verdict", "Time (ms)", "Memory (bytes)", "Passed tests", "Points", "Problem URL", "Participant type", "Problem index", "Timestamp (UTC seconds)"];
-export const CONTEST_HEADERS = ["Contest ID", "Contest", "Date (PKT)", "Problems solved", "Solved problems", "Rank", "Old rating", "New rating", "Rating change", "Rank among friends", "Friends competing (incl. you)", "Rating status", "Contest URL"];
+export const CONTEST_HEADERS = ["Contest ID", "Contest", "Date (PKT)", "Problems solved", "Solved problems", "Rank", "Old rating", "New rating", "Rating change", "Rating status", "Contest URL"];
 export const REPORT_HEADERS = ["Month", "Status", "Submissions", "Accepted submissions", "Unique problems solved", "Rated problems solved", "Average problem rating", "Contests", "Average contest rank", "Rating change", "Rated contests", "Coverage"];
 export const PENDING_VERDICTS = new Set(["", "TESTING", "QUEUED"]);
 
@@ -72,7 +72,7 @@ export function monthlyReports(submissions, contests, startedAt, now = Date.now(
         const unique = [...new Map(accepted.map(row => [`${row[3]}:${row[4]}`, row])).values()];
         const ratings = unique.map(row => row[6]).filter(x => x !== "" && x != null && Number.isFinite(Number(x))).map(Number);
         const ranked = data.contests.map(row => Number(row[5])).filter(x => x > 0);
-        const rated = data.contests.filter(row => row[11] === "Rated");
+        const rated = data.contests.filter(row => row[9] === "Rated");
         return [month, month === currentMonth ? "In progress" : "Complete", data.submissions.length, accepted.length,
             unique.length, ratings.length, mean(ratings), data.contests.length, mean(ranked),
             rated.reduce((sum, row) => sum + Number(row[8]), 0), rated.length,

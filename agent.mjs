@@ -21,7 +21,7 @@ Submission data stays inside the tools. Never invent submissions or cursor value
             getNewSubmissions: define("Read the saved baseline and fetch only newer submissions.", () => workflow.fetch()),
             appendSubmissions: define("Write the exact fetched submissions, preserving tags and avoiding existing IDs.", () => workflow.append()),
             updateLastSubmissionId: define("Advance to the newest successfully written submission ID.", () => workflow.commit()),
-            syncContestReports: define("Refresh pending verdicts, contest results, friend ranks and monthly reports.", () => workflow.report())
+            syncContestReports: define("Refresh pending verdicts, contest results and monthly reports.", () => workflow.report())
         },
         prepareStep: () => workflow.nextTool
             ? { activeTools: [workflow.nextTool], toolChoice: { type: "tool", toolName: workflow.nextTool } }
