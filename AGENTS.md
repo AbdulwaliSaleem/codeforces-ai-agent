@@ -17,6 +17,21 @@ The system should:
 
 The project is already deployed and working.
 
+## Current Release — 26 September 2026
+
+Commit `7ff7e33` is deployed on production `main` and is present in the local project.
+The spreadsheet now has `Submissions`, `Contests`, `Monthly Reports`, `Friends`,
+and `Tracker Settings` tabs. `Sheet1` is retained as the original data copy.
+
+The user selected monthly reports only. The Friends tab contains 68 verified
+Codeforces handles; `Sahil Sarfraz` was normalized to `SahilSarfraz` using the API.
+The live Friends tab is the source for future comparison changes.
+
+The deployed feature changes were pushed directly to main with user approval.
+A retrospective draft PR compares them against the pre-release commit for review;
+its comparison base is not the production branch. Do not revert production or
+force-push main to recreate a conventional feature PR.
+
 ---
 
 ## Current Architecture
@@ -37,10 +52,16 @@ Detailed flow:
 3. The agent calls a tool that reads `last_submission_id` from Supabase.
 4. The agent fetches recent Codeforces submissions.
 5. It filters only submissions with an ID greater than the stored ID.
-6. If there are no new submissions, it stops.
+6. If there are no new submissions, it skips submission writes and cursor updates.
 7. If there are new submissions, it writes all of them to Google Sheets.
 8. Only after the spreadsheet write succeeds, it updates `last_submission_id` in Supabase.
 9. The newest successfully written submission ID becomes the new cursor.
+10. The agent then refreshes pending verdicts, missing tags, completed contest
+    results, friend ranks, and monthly reports, even on days without new submissions.
+
+Submission objects are kept in per-run tool state, not reconstructed from model
+arguments. Tools enforce fetch → successful sheet write → cursor update. The agent
+can only select the next permitted tool. Codeforces fetching is paginated.
 
 ---
 
@@ -54,7 +75,8 @@ These rules must always be preserved:
 - Never intentionally create duplicate rows.
 - Keep the workflow idempotent where possible.
 - If the Google Sheets write fails, Supabase state must not advance.
-- If there are no new submissions, do nothing except return success.
+- If there are no new submissions, do not append submissions or advance the cursor;
+  still refresh contest results and monthly reports as requested by the user.
 - Codeforces submission IDs are used as the cursor for incremental tracking.
 
 ---
@@ -100,9 +122,14 @@ The sheet currently stores Codeforces submission data such as:
 - Points
 - Problem URL
 
-The current sheet-writing logic is mainly in:
+The new Submissions tab preserves those fields, splits date/time into Pakistan
+local columns, and adds hidden participant type, problem index, and UTC timestamp
+metadata for contest tracking. Verdict cells are green for `OK`, red for final
+failures, and yellow for pending judging. Tags do not depend on the verdict.
 
-`tools/sheets.mjs`
+`tools/sheets.mjs` exports the append function from `tools/workbook.mjs`, which
+handles authenticated API calls, formatting, tab creation, and duplicate ID checks.
+`tools/rows.mjs` handles row conversion and monthly calculations.
 
 ---
 
@@ -144,6 +171,7 @@ The agent has tools for:
 - fetching new Codeforces submissions
 - appending submissions to Google Sheets
 - updating the saved submission ID
+- refreshing contest results and monthly reports
 
 The main agent file is:
 
@@ -227,11 +255,48 @@ Handles:
 
 ### `tools/sheets.mjs`
 
-Handles:
+Re-exports the append function from `tools/workbook.mjs`.
 
-- Google Sheets authentication
-- converting a Codeforces submission into a spreadsheet row
-- appending rows to the sheet
+### `tools/workbook.mjs`
+
+Handles Google authentication, spreadsheet formatting, tab creation, writes,
+existing-ID checks, and migration of rows already in Sheet1. Sheet1 remains intact.
+During the deployment transition, rows written by the old version are merged into
+Submissions without fetching older history.
+
+### `tools/rows.mjs`
+
+Converts timestamps to Asia/Karachi, defines columns, converts existing rows, and
+calculates monthly summaries from tracked data.
+
+### `tools/codeforces-api.mjs`
+
+Serializes public API calls and supplements missing tags from the problem catalog.
+
+### `tools/workflow.mjs`
+
+Keeps per-run submission data and enforces write-before-cursor ordering.
+
+### `tools/contests.mjs` and `tools/reports.mjs`
+
+Collect completed official contest results and friend ranks, refresh pending
+verdicts and missing tags, and update monthly reports. Contest tracking uses the
+start timestamp stored in Tracker Settings and does not import older contests.
+
+### `tracker-config.mjs`
+
+Seeds the user-supplied friend handles when the Friends tab is first created.
+After creation, the live Friends tab controls comparisons.
+
+### `scripts/` and `tests/`
+
+- `npm test`: isolated fixture tests; no production writes or network calls.
+- `npm run sheet:inspect`: read-only sheet and cursor inspection.
+- `npm run sheet:setup`: creates/formats tabs, validates friends, refreshes reports;
+  does not advance the submission cursor.
+- `node scripts/verify-sheet.mjs`: read-only checks of migration, unique IDs,
+  dates, tags, conditional formatting, friends, monthly report, and cursor.
+- `node run-local.mjs`: a real agent run that can write submissions and state.
 
 ### `tools/state.mjs`
 
@@ -279,55 +344,51 @@ The system can currently:
 - run from a Vercel deployment
 - execute through the cron endpoint
 
-A manual cloud test has already succeeded.
+A manual cloud test of the original workflow succeeded before this release.
+For the new release, Vercel deployment succeeded, all 10 local tests passed, and
+live sheet setup and read-only verification succeeded. The full updated local
+agent run was blocked by Gemini's free-tier request quota; do not claim it passed.
 
 ---
 
-## Known Issue
+## Spreadsheet Format and Known Limitations
 
-The timestamp written to Google Sheets currently uses UTC.
+Submissions display separate Pakistan date and time columns, for example
+`26 Sep 2026` and `03:17:03`, using `Asia/Karachi` (UTC+05:00).
 
-Example format:
+Tags are retained for every verdict and filled from the Codeforces catalog where
+possible. If no tags are published, use `Not published by Codeforces` and retry
+later. Problem 1578C had no topic tags in either the API or official problem page
+when checked; never invent tags to fill the cell.
 
-`2026-09-26T07:57:31.000Z`
+Contests records solved problems, official rank, old/new rating, rating change,
+and rank among configured friends who participated. Ties share a friend rank.
+Only completed official public contests starting after the persisted contest
+baseline are included. Results update daily, and delayed rating changes are
+rechecked. Practice/virtual entries and private/gym standings requiring API
+authentication are not supported. An unrated contest with no submissions cannot
+be discovered by the current workflow.
 
-The user's preferred timezone is Pakistan Standard Time.
+Monthly Reports counts unique accepted problems per month, averages ratings only
+over rated solved problems, averages official contest ranks, and totals published
+rating changes. Empty averages mean no qualifying data. The current month remains
+in progress, and the first month identifies partial coverage. Reports live in the
+sheet; there is no email delivery or weekly report.
 
-Timezone:
-
-`Asia/Karachi`
-
-UTC offset:
-
-`UTC+05:00`
-
-Future spreadsheet changes should use Pakistan local time unless the user explicitly requests another timezone.
-
-Do not assume the final display format yet. Ask or follow the user's requested sheet format.
+The original Sheet1 is preserved; its repeated submission IDs are collapsed in
+the new tab. Final verdicts are not continually refreshed for later rejudges.
+Use the daily cron as the sole writer: overlapping manual runs can still race
+because Google Sheets has no transactional unique-ID constraint.
 
 ---
 
-## Next Planned Work
+## Follow-up Work
 
-The next work is mainly improving the spreadsheet.
-
-The user wants to specify the exact Google Sheet layout and formatting.
-
-Potential changes may include:
-
-- Pakistan local date/time
-- separate date and time columns
-- custom date formatting
-- removing unnecessary columns
-- adding new columns
-- sorting
-- styling
-- conditional formatting
-- accepted-only views
-- dashboards
-- summary statistics
-
-Do not implement layout assumptions before reading the user's requested format.
+The requested sheet layout, contest tracking, friend comparisons, and monthly
+reports have been implemented. Future work should follow new user requests.
+If verifying the complete agent again, first account for the Gemini quota
+limitation. Do not change the model/provider or billing configuration without
+the user's instruction.
 
 ---
 
@@ -397,4 +458,5 @@ Before making changes:
 5. Preserve all existing production behavior.
 6. Then work on the user's requested change.
 
-The current expected next task is likely related to improving the Google Sheet layout and converting timestamps to Pakistan local time.
+Use the current-release section and README.md for the implemented spreadsheet
+behavior. Do not repeat the migration or import historical submissions to test it.
