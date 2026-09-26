@@ -22,7 +22,7 @@ export async function GET(request) {
             result
         });
     } catch (error) {
-        console.error(error);
+        console.error(error instanceof Error ? error.message : "Tracker failed");
 
         return Response.json(
             {

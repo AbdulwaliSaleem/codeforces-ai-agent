@@ -7,5 +7,6 @@ runAgent()
     })
     .catch((err) => {
         console.error("AGENT ERROR:");
-        console.error(err);
+        console.error(err instanceof Error ? err.message : "Unknown error");
+        process.exitCode = 1;
     });
