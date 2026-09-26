@@ -2,7 +2,7 @@ import "dotenv/config";
 import { google } from "googleapis";
 import { enrichTags } from "./codeforces-api.mjs";
 import { SUBMISSION_HEADERS, CONTEST_HEADERS, REPORT_HEADERS, legacySubmission, makeRow } from "./rows.mjs";
-import { friendHandles } from "../tracker-config.mjs";
+import { removeFriendFeatureRequests } from "./workbook-migration.mjs";
 
 const auth = new google.auth.GoogleAuth({
     credentials: { client_email: process.env.GOOGLE_CLIENT_EMAIL, private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n") },
@@ -11,7 +11,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: "v4", auth });
 google.options({ timeout: 30000, retry: false });
 const spreadsheetId = process.env.SPREADSHEET_ID;
-const titles = { Submissions: SUBMISSION_HEADERS, Contests: CONTEST_HEADERS, "Monthly Reports": REPORT_HEADERS, Friends: ["Codeforces handle", "Validation"], "Tracker Settings": ["Setting", "Value"] };
+const titles = { Submissions: SUBMISSION_HEADERS, Contests: CONTEST_HEADERS, "Monthly Reports": REPORT_HEADERS, "Tracker Settings": ["Setting", "Value"] };
 export async function metadata() {
     return (await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties,conditionalFormats)" })).data.sheets;
 }
@@ -60,15 +60,21 @@ function style(sheetId, title, headers) {
             ['=AND($J2<>"",$J2<>"OK",$J2<>"TESTING",$J2<>"QUEUED")', { red: 1, green: 0.76, blue: 0.76 }],
             ['=OR($J2="TESTING",$J2="QUEUED")', { red: 1, green: 0.92, blue: 0.65 }]
         ]) requests.push({ addConditionalFormatRule: { index: 0, rule: { ranges: [{ sheetId, startRowIndex: 1, startColumnIndex: 9, endColumnIndex: 10 }], booleanRule: { condition: { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: formula }] }, format: { backgroundColor: color } } } } });
-    } else if (title === "Contests") { width(1, 320); width(4, 240); width(12, 340); }
+    } else if (title === "Contests") { width(1, 320); width(4, 240); width(10, 340); }
     else if (title === "Monthly Reports") width(11, 460);
-    else if (title === "Friends") { width(0, 280); width(1, 330); }
     return requests;
 }
 
 // New tabs are created atomically; Sheet1 remains an untouched original copy.
 export async function ensureWorkbook() {
-    const existing = await metadata();
+    let existing = await metadata();
+    const removal = removeFriendFeatureRequests(existing,
+        existing.some(s => s.properties.title === "Contests") ? (await readRows("Contests"))[0] : undefined,
+        existing.some(s => s.properties.title === "Friends") ? (await readRows("Friends"))[0] : undefined);
+    if (removal.length) {
+        await batch(removal);
+        existing = await metadata();
+    }
     const names = new Set(existing.map(s => s.properties.title));
     for (const [title, headers] of Object.entries(titles)) {
         if (!names.has(title)) continue;
@@ -88,7 +94,6 @@ export async function ensureWorkbook() {
         requests.push({ addSheet: { properties: { sheetId, title, gridProperties: { rowCount: Math.max(1000, migrated.length + 1), columnCount: Math.max(18, headers.length) } } } });
         let rows = [headers];
         if (title === "Submissions") rows.push(...migrated);
-        if (title === "Friends") rows.push(...friendHandles.map(handle => [handle, "Not checked"]));
         if (title === "Tracker Settings") rows.push(["contest_tracking_started_at", Math.floor(Date.now() / 1000)]);
         requests.push(cellsRequest(sheetId, rows), ...style(sheetId, title, headers));
     }

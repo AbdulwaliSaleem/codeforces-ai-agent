@@ -1,13 +1,11 @@
 import { codeforces } from "./codeforces-api.mjs";
 import { pakistanDateTime, displayDate } from "./rows.mjs";
 
-export function contestRow(standings, handle, friends, rating) {
+export function contestRow(standings, handle, rating) {
     const belongsTo = (row, name) => row.party.members.some(m => m.handle.toLowerCase() === name.toLowerCase());
     const official = standings.rows.filter(row => row.party.participantType === "CONTESTANT");
     const mine = official.find(row => belongsTo(row, handle));
     if (!mine) return null;
-    const names = new Set([handle, ...friends].map(name => name.toLowerCase()));
-    const peers = official.filter(row => row.party.members.some(m => names.has(m.handle.toLowerCase())));
     // IOI permits partial points; only full scores count as solved.
     const solved = mine.problemResults.flatMap((result, index) => {
         const problem = standings.problems[index];
@@ -19,12 +17,11 @@ export function contestRow(standings, handle, friends, rating) {
     return [standings.contest.id, standings.contest.name, displayDate(pakistanDateTime(standings.contest.startTimeSeconds).date),
         solved.length, solved.join(", "), mine.rank, rating?.oldRating ?? "", rating?.newRating ?? "",
         rating ? rating.newRating - rating.oldRating : "",
-        friends.length ? 1 + peers.filter(row => row.rank < mine.rank).length : "",
-        friends.length ? peers.length : "", rating ? "Rated" : "Unrated / awaiting rating",
+        rating ? "Rated" : "Unrated / awaiting rating",
         `https://codeforces.com/contest/${standings.contest.id}`];
 }
 
-export async function collectContests(submissions, existing, startedAt, friends, api = codeforces) {
+export async function collectContests(submissions, existing, startedAt, api = codeforces) {
     const handle = process.env.CODEFORCES_HANDLE;
     const ratings = await api("user.rating", { handle });
     const ratingMap = new Map(ratings.map(r => [r.contestId, r]));
@@ -41,7 +38,7 @@ export async function collectContests(submissions, existing, startedAt, friends,
             // Public regular standings currently require exactly this parameter.
             const standings = await api("contest.standings", { contestId });
             if (standings.contest.startTimeSeconds < startedAt || standings.contest.phase !== "FINISHED") continue;
-            const row = contestRow(standings, handle, friends, ratingMap.get(contestId));
+            const row = contestRow(standings, handle, ratingMap.get(contestId));
             if (row) results.set(contestId, row);
         } catch {
             // Preserve prior results and retry on the next daily run.

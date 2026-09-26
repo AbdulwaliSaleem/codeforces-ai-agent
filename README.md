@@ -5,9 +5,8 @@ Daily Vercel Cron → Gemini ToolLoopAgent → Codeforces → Google Sheets → 
 ## Spreadsheet
 
 - **Submissions:** the original columns, with separate date and time in Pakistan time (`26 Sep 2026`, `03:17:03`). Verdict cells are green for `OK`, red for final failures, and yellow while judging. Tags are retained for every verdict and supplemented from the problem catalog. Unpublished tags are explicitly labelled and retried daily.
-- **Contests:** completed official public contests, solved problem indices/count, official rank, old/new rating and change, and rank among configured friends who competed. Ties share a friend rank. Practice and virtual participation are excluded. IOI partial scores do not count as full solves.
+- **Contests:** completed official public contests, solved problem indices/count, official rank, and old/new rating and change. Practice and virtual participation are excluded. IOI partial scores do not count as full solves.
 - **Monthly Reports:** a running current-month report, completed months, unique accepted problems per month, mean difficulty of rated solved problems, mean official contest rank, and net published rating change. Duplicate submissions and repeated accepts of the same problem do not inflate unique solve counts. Unrated problems are excluded from the rating average; a blank average means no qualifying data. Weeks are not reported.
-- **Friends:** handles supplied by the user, with validation status. Edit this tab to change the comparison group. Missing handles remain visible for correction and cannot match the standings.
 - **Tracker Settings:** persists the contest tracking start timestamp. Do not reset it to import history.
 - **Sheet1:** preserved original data. The new tabs copy only submissions already in this sheet, collapse repeated IDs, and continue merging any rows written by the old deployment during the transition. No older Codeforces submission history is imported.
 
@@ -26,7 +25,11 @@ npm run sheet:setup
 node run-local.mjs
 ```
 
-`npm test` uses isolated fixtures with no network or production writes. `sheet:inspect` reads sheet headers and the current cursor. `sheet:setup` creates and formats the tabs, validates friends, and refreshes reports without advancing the submission cursor. `run-local.mjs` performs a real sync, including writes; do not use it as a harmless test.
+`npm test` uses isolated fixtures with no network or production writes. `sheet:inspect` reads sheet headers and the current cursor. `sheet:setup` creates and formats the tabs and refreshes reports without advancing the submission cursor. `run-local.mjs` performs a real sync, including writes; do not use it as a harmless test.
+
+Friend comparisons have been removed. After deploying this version, workbook setup atomically removes the old Friends tab and the two comparison columns from Contests. All other contest fields and the saved baselines are preserved. The migration validates the old headers first and does nothing on subsequent runs. `node scripts/remove-friends.mjs` previews the migration; add `--apply` to apply and verify it without calling the LLM or fetching submission history. Deploy the new code before migrating the live sheet so an older deployment cannot recreate the removed feature.
+
+Removing the feature from the current files does not erase handles from earlier Git commits or spreadsheet version history. Publishing the repository still requires a separate review of its history.
 
 Submission data is held in per-run tool state; the model cannot reconstruct or drop fields. The tools enforce fetch → successful write → cursor update, and check existing submission IDs on retries. The cursor is never reset. API pagination avoids losing submissions beyond a fixed recent window. Existing pending verdicts are refreshed without appending historical submissions. Final already-recorded verdicts are not continually rechecked for later rejudges.
 
